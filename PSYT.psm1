@@ -89,7 +89,7 @@ function Get-RawTranscript {
         $transcriptParts += [PSCustomObject]@{
             start    = $node.GetAttribute('start')
             duration = $node.GetAttribute('dur')
-            text     = $node.InnerText
+            text     = [System.Web.HttpUtility]::HtmlDecode($node.InnerText)
         }
     }
 
@@ -116,3 +116,5 @@ function Get-Transcript {
         return @()
     }
 }
+
+get-transcript -videoId OHQFObW6PXA

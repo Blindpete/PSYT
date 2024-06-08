@@ -1,5 +1,5 @@
 @{
-    ModuleVersion     = '0.0.1'
+    ModuleVersion     = '0.0.2'
     GUID              = '7b22e037-e42c-4321-926d-8f97cacd7079'
     Author            = 'Peter Cook'
     CompanyName       = 'Peter Cook'

@@ -33,7 +33,7 @@ The video discusses creating an application without coding using artificial inte
 ### TODO
 
 - [ ] Add more examples
-- [ ] Fix encode issue
+- [x] Fix encode issue
 - [ ] Add getting video description
 - [ ] Add getting video title
 - [ ] Add getting video chapters

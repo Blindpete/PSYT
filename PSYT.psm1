@@ -116,5 +116,3 @@ function Get-Transcript {
         return @()
     }
 }
-
-get-transcript -videoId OHQFObW6PXA

@@ -71,7 +71,6 @@ function Invoke-GeminiAI {
 
 Import-Module "$PSScriptRoot\..\PSYT.psm1"
 
-# Ref: https://github.com/danielmiessler/fabric/blob/main/patterns/extract_insights/system.md
 $Instructions = @'
 Summarize the key points of this video transcript,
 '@

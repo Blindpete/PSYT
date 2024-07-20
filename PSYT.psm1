@@ -83,6 +83,16 @@ function Get-VideoPageHtml {
         $html = $response.Content
         # Check if the HTML content contains the video URL: <meta property="og:url" content="https://www.youtube.com/watch?v=GikIJpUv6oo">
         if ($html -match 'og:url') {
+            # Check if the HTML content contains 'class="g-recaptcha"'
+            if ($html -match 'class="g-recaptcha"') {
+                Write-Host "Failed to get the HTML content Too Many Requests for video ID: $videoId"
+                return $null
+            }
+            # Check if the HTML content contains '"playabilityStatus":'
+            if ($html -notmatch '"playabilityStatus":') {
+                Write-Host "Failed to get the HTML content Video Unavailable for video ID: $videoId"
+                return $null
+            }
             return $html
         } else {
             Write-Host "Failed to get the HTML content for video ID: $videoId"
@@ -121,7 +131,14 @@ function Get-LangOptionsWithLink {
         # Extract the caption tracks: baseUrl=/api/timedtext?...... this url does expire after some time
         $captionTracks = $captions.playerCaptionsTracklistRenderer.captionTracks
         # This will give the language options
-        $languageOptions = $captionTracks | ForEach-Object { $_.name.runs.text }
+        # if $_.name.runs.text else $_.name.simpleText
+
+        $languageOptions = $captionTracks | ForEach-Object { 
+            if ($_.name.runs.text) {
+                $_.name.runs.text 
+            } else {
+                $_.name.simpleText 
+            } }
 
         # Looks like most will be 'English (auto-generated)' and 'English' azurming this is manuly created, so the one we want over auto-generated
         $languageOptions = $languageOptions | Sort-Object {
@@ -136,7 +153,11 @@ function Get-LangOptionsWithLink {
 
         $languageOptionsWithLink = $languageOptions | ForEach-Object {
             $langName = $_
-            $link = ($captionTracks | Where-Object { $_.name.runs.text -eq $langName }).baseUrl
+            # $link = ($captionTracks | Where-Object { $_.name.runs[0].text -or $_.name.simpleText -eq $langName }).baseUrl
+            $link = $captionTracks | ForEach-Object {
+                $name = if ($_.name.runs) { $_.name.runs[0].text } else { $_.name.simpleText }
+                if ($name -eq $langName) { $_.baseUrl }
+            } | Select-Object -First 1
             [PSCustomObject]@{
                 title       = $videoDetailsJson.title
                 description = $videoDetailsJson.shortDescription
@@ -156,7 +177,11 @@ function Get-RawTranscript {
         [string]$link
     )
 
-    $uri = ('https://www.youtube.com{0}' -f $link)
+    if (-not $link.StartsWith('https://www.youtube.com')) {
+        $uri = ('https://www.youtube.com{0}' -f $link)
+    } else {
+        $uri = $link
+    }
     $transcriptPageResponse = Invoke-WebRequest -Uri $uri
     [xml]$xmlDoc = [xml](New-Object System.Xml.XmlDocument)
     $xmlDoc.LoadXml($transcriptPageResponse.Content)

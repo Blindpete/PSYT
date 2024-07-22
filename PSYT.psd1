@@ -5,7 +5,9 @@
     Author            = 'Peter Cook'
     CompanyName       = 'Peter Cook'
     Copyright         = '(c) All rights reserved.'
-
+    Description       = @'
+PSYT is a PowerShell module that provides functions to retrieve YouTube video transcripts.
+'@
     PowerShellVersion = '7.4'
     FunctionsToExport = @(
         'Get-VideoPageHtml'

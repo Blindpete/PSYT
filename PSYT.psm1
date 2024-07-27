@@ -206,7 +206,9 @@ function Get-Transcript {
         [Parameter(Mandatory)]
         [string]$videoId,
         [switch]$IncludeTitle,
-        [switch]$IncludeDescription
+        [switch]$IncludeDescription,
+        [ValidateSet('PSObject', 'Markdown')]
+        [string]$OutputFormat = 'Markdown'
     )
     $vidId = Test-YouTubeVideoId -InputString $videoId
     $langOptLinks = Get-LangOptionsWithLink -videoId $vidId
@@ -220,17 +222,33 @@ function Get-Transcript {
 
         # retrun the video info
         # title, description, transcript
+        $markdown = "# Video Transcript`n"
         $videoinfo = [PSCustomObject][ordered]@{
         }
         if ($IncludeTitle) {
             $videoinfo | Add-Member -NotePropertyName 'title' -NotePropertyValue $langOptLinks[0].title
+            $markdown += "## Title`n$($langOptLinks[0].title)`n"
         }
         if ($IncludeDescription) {
             $videoinfo | Add-Member -NotePropertyName 'description' -NotePropertyValue $langOptLinks[0].description
+            $markdown += "## Description`n$($langOptLinks[0].description)`n"
         }
         $videoinfo | Add-Member -NotePropertyName 'language' -NotePropertyValue $langOptLinks[0].language
+        $markdown += "## Language`n$($langOptLinks[0].language)`n"
         $videoinfo | Add-Member -NotePropertyName 'transcript' -NotePropertyValue (Get-RawTranscript -link $link)
-        return $videoinfo
+        $markdown += @"
+## Transcript
+| Start    | Duration | Text |
+| :------- | :------ | :------ |`n
+"@
+        foreach ($part in $videoinfo.transcript) {
+            $markdown += "| $($part.start) | $($part.duration) | $($part.text) |`n"
+        }
+        if ($OutputFormat -eq 'Markdown') {
+            return $markdown
+        } else {
+            return $videoinfo
+        }
         
     } else {
         Write-Host 'No valid link found for the transcript.'

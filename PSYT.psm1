@@ -182,22 +182,35 @@ function Get-RawTranscript {
     } else {
         $uri = $link
     }
-    $transcriptPageResponse = Invoke-WebRequest -Uri $uri
-    [xml]$xmlDoc = [xml](New-Object System.Xml.XmlDocument)
-    $xmlDoc.LoadXml($transcriptPageResponse.Content)
 
-    $textNodes = $xmlDoc.documentElement.ChildNodes
+    try {
+        $transcriptPageResponse = Invoke-WebRequest -Uri $uri -ErrorAction Stop
+        $content = $transcriptPageResponse.Content
 
-    $transcriptParts = @()
-    foreach ($node in $textNodes) {
-        $transcriptParts += [PSCustomObject]@{
-            start    = $node.GetAttribute('start')
-            duration = $node.GetAttribute('dur')
-            text     = [System.Web.HttpUtility]::HtmlDecode($node.InnerText)
+        if ([string]::IsNullOrEmpty($content)) {
+            Write-Host "Transcript content is empty for URL: $uri"
+            return @()
         }
-    }
 
-    return $transcriptParts
+        $xmlDoc = New-Object System.Xml.XmlDocument
+        $xmlDoc.LoadXml($content)
+
+        $textNodes = $xmlDoc.documentElement.ChildNodes
+
+        $transcriptParts = @()
+        foreach ($node in $textNodes) {
+            $transcriptParts += [PSCustomObject]@{
+                start    = $node.GetAttribute('start')
+                duration = $node.GetAttribute('dur')
+                text     = [System.Web.HttpUtility]::HtmlDecode($node.InnerText)
+            }
+        }
+        return $transcriptParts
+    }
+    catch {
+        Write-Host "No transcript found. It might be because the video does not have a transcript or there was an error fetching it."
+        return @()
+    }
 }
 
 # Function to get the transcript

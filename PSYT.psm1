@@ -116,38 +116,41 @@ function Get-LangOptionsWithLink {
         return @()
     }
 
-    $splittedHtml = $videoPageHtml -split '"captions":'
+    # More reliable way to get captions is to look for ytInitialPlayerResponse in the HTML
+    $regex = [regex] 'ytInitialPlayerResponse\s*=\s*({.*?});'
+    $match = $regex.Match($videoPageHtml)
 
-    if ($splittedHtml.Length -lt 2) {
+    if (-not $match.Success) {
         Write-Host 'No Caption Available'
         return @() # No Caption Available
     }
 
     try {
-        $JsonregexPattern = '{(?:[^{}]|(?<Open>{)|(?<-Open>}))*(?(Open)(?!))}'
-        $captionsJson = $splittedHtml[1] -split ',"videoDetails' | Select-Object -First 1
-        $videoDetailsJson = ([regex]::Match(($splittedHtml[1] -split ',"videoDetails')[1], $JsonregexPattern).Value | ConvertFrom-Json)
-        $captions = ConvertFrom-Json $captionsJson
+        $playerResponse = $match.Groups[1].Value | ConvertFrom-Json
+        $videoDetails = $playerResponse.videoDetails
         # Extract the caption tracks: baseUrl=/api/timedtext?...... this url does expire after some time
-        $captionTracks = $captions.playerCaptionsTracklistRenderer.captionTracks
+        $captionTracks = $playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks
         # This will give the language options
         # if $_.name.runs.text else $_.name.simpleText
-
-        $languageOptions = $captionTracks | ForEach-Object { 
+        $languageOptions = $captionTracks | ForEach-Object {
             if ($_.name.runs.text) {
-                $_.name.runs.text 
-            } else {
-                $_.name.simpleText 
-            } }
+                $_.name.runs.text
+            }
+            else {
+                $_.name.simpleText
+            }
+        }
 
         # Looks like most will be 'English (auto-generated)' and 'English' azurming this is manuly created, so the one we want over auto-generated
         $languageOptions = $languageOptions | Sort-Object {
             if ($_ -eq 'English') {
-                return -1 
-            } elseif ($_ -match 'English') {
-                return 0 
-            } else {
-                return 1 
+                return -1
+            }
+            elseif ($_ -match 'English') {
+                return 0
+            }
+            else {
+                return 1
             }
         }
 
@@ -155,19 +158,27 @@ function Get-LangOptionsWithLink {
             $langName = $_
             # $link = ($captionTracks | Where-Object { $_.name.runs[0].text -or $_.name.simpleText -eq $langName }).baseUrl
             $link = $captionTracks | ForEach-Object {
-                $name = if ($_.name.runs) { $_.name.runs[0].text } else { $_.name.simpleText }
-                if ($name -eq $langName) { $_.baseUrl }
+                $name = if ($_.name.runs) {
+                    $_.name.runs[0].text
+                }
+                else {
+                    $_.name.simpleText
+                }
+                if ($name -eq $langName) {
+                    $_.baseUrl
+                }
             } | Select-Object -First 1
             [PSCustomObject]@{
-                title       = $videoDetailsJson.title
-                description = $videoDetailsJson.shortDescription
+                title       = $videoDetails.title
+                description = $videoDetails.shortDescription
                 language    = $langName
                 link        = $link
             }
         }
 
         return $languageOptionsWithLink
-    } catch {
+    }
+    catch {
         Write-Host 'Error parsing captions JSON'
         return @()
     }

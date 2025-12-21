@@ -73,14 +73,81 @@ function Test-YouTubeVideoId {
     }
 }
 
+function Get-PSYTWebSession {
+    [CmdletBinding()]
+    param()
+
+    if (-not $script:PSYT_WebSession) {
+        $script:PSYT_WebSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    }
+
+    return $script:PSYT_WebSession
+}
+
+function Get-PSYTHeaders {
+    [CmdletBinding()]
+    param()
+
+    # Keep this lightweight but "browser-like" enough for YouTube to return the expected payloads.
+    return @{
+        'Accept-Language' = 'en-US,en;q=0.9'
+        'Accept'          = 'application/xml,text/xml,text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8'
+        'User-Agent'      = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+}
+
+function Set-PSYTConsentCookie {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [Microsoft.PowerShell.Commands.WebRequestSession]$WebSession,
+
+        [Parameter(Mandatory)]
+        [string]$ConsentValue
+    )
+
+    try {
+        $cookie = New-Object System.Net.Cookie
+        $cookie.Name = 'CONSENT'
+        $cookie.Value = "YES+$ConsentValue"
+        $cookie.Path = '/'
+        $cookie.Domain = '.youtube.com'
+        $WebSession.Cookies.Add($cookie)
+    } catch {
+        # Best-effort; if this fails, the subsequent request will still indicate consent is required.
+        Write-Debug "Failed to set CONSENT cookie: $($_.Exception.Message)"
+    }
+}
+
 function Get-VideoPageHtml {
     param (
         [string]$videoId
     )
 
     try {
-        $response = Invoke-WebRequest -Uri "https://www.youtube.com/watch?v=$videoId"
+        $session = Get-PSYTWebSession
+        $headers = Get-PSYTHeaders
+
+        $response = Invoke-WebRequest -Uri "https://www.youtube.com/watch?v=$videoId" -WebSession $session -Headers $headers -SkipHttpErrorCheck
         $html = $response.Content
+
+        # If YouTube serves a consent page, set the CONSENT cookie and retry once (mirrors youtube-transcript-api behavior).
+        if ($html -match 'action="https://consent\.youtube\.com/s"') {
+            $consentMatch = [regex]::Match($html, 'name="v"\s+value="(.*?)"')
+            if ($consentMatch.Success -and $consentMatch.Groups.Count -ge 2) {
+                Set-PSYTConsentCookie -WebSession $session -ConsentValue $consentMatch.Groups[1].Value
+                $response = Invoke-WebRequest -Uri "https://www.youtube.com/watch?v=$videoId" -WebSession $session -Headers $headers -SkipHttpErrorCheck
+                $html = $response.Content
+            } else {
+                Write-Host "Failed to auto-consent to cookies for video ID: $videoId"
+                return $null
+            }
+
+            if ($html -match 'action="https://consent\.youtube\.com/s"') {
+                Write-Host "Failed to auto-consent to cookies for video ID: $videoId"
+                return $null
+            }
+        }
         # Check if the HTML content contains the video URL: <meta property="og:url" content="https://www.youtube.com/watch?v=GikIJpUv6oo">
         if ($html -match 'og:url') {
             # Check if the HTML content contains 'class="g-recaptcha"'
@@ -182,9 +249,40 @@ function Get-RawTranscript {
     } else {
         $uri = $link
     }
-    $transcriptPageResponse = Invoke-WebRequest -Uri $uri
-    [xml]$xmlDoc = [xml](New-Object System.Xml.XmlDocument)
-    $xmlDoc.LoadXml($transcriptPageResponse.Content)
+
+    # Align request behavior with youtube-transcript-api: keep cookies + headers consistent, and validate response before parsing XML.
+    $session = Get-PSYTWebSession
+    $headers = Get-PSYTHeaders
+
+    $transcriptPageResponse = Invoke-WebRequest -Uri $uri -WebSession $session -Headers $headers -SkipHttpErrorCheck
+
+    if ($transcriptPageResponse.StatusCode -eq 429) {
+        throw "YouTube is rate-limiting or blocking requests (HTTP 429) when fetching timedtext. Try again later or from a different network/IP."
+    }
+
+    $content = $transcriptPageResponse.Content
+    if ([string]::IsNullOrWhiteSpace($content)) {
+        throw "Timedtext returned an empty response body. This usually means the request was blocked, the caption URL expired, or captions are unavailable."
+    }
+
+    $trimmed = $content.TrimStart()
+    if ($trimmed.StartsWith('<!DOCTYPE html', [System.StringComparison]::OrdinalIgnoreCase) -or
+        $trimmed.StartsWith('<html', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $snippet = ($trimmed.Substring(0, [Math]::Min(250, $trimmed.Length))).Replace("`r", ' ').Replace("`n", ' ')
+        throw "Expected transcript XML but received HTML instead (likely consent/blocked page). First bytes: $snippet"
+    }
+
+    if ($trimmed -match 'class="g-recaptcha"' -or $trimmed -match "Sign in to confirm you.?re not a bot") {
+        throw "YouTube is blocking this request with a bot/recaptcha page. Try again later or from a different network/IP."
+    }
+
+    $xmlDoc = New-Object System.Xml.XmlDocument
+    try {
+        $xmlDoc.LoadXml($content)
+    } catch {
+        $snippet = ($trimmed.Substring(0, [Math]::Min(250, $trimmed.Length))).Replace("`r", ' ').Replace("`n", ' ')
+        throw "Failed to parse transcript XML: $($_.Exception.Message). First bytes: $snippet"
+    }
 
     $textNodes = $xmlDoc.documentElement.ChildNodes
 

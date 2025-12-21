@@ -73,3 +73,8 @@ $summary | glow
 - [x] Add getting video description
 - [x] Add getting video title
 - [ ] Add getting video chapters
+
+### Notes / Troubleshooting
+
+- The module fetches caption-track metadata via YouTube's Innertube player API (mirroring `youtube-transcript-api`) to avoid stale/blocked caption URLs.
+- If you see errors like **HTTP 429**, **bot/recaptcha**, or **Expected transcript XML but received HTML**, YouTube is blocking requests from your IP/network. Retrying later or using a different network/IP usually resolves it.

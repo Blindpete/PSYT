@@ -1,3 +1,7 @@
+# V0.3.0
+
+- Fix transcript fetch (Innertube caption tracks + robust XML handling)
+
 # V0.2.0
 
 - changed default output to `markdown`, can choose `psobject`

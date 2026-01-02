@@ -377,48 +377,51 @@ function ConvertTo-TOON {
         [PSCustomObject]$VideoInfo
     )
 
+    # Helper function to escape and quote a value for TOON format
+    function ConvertTo-TOONValue {
+        param (
+            [string]$Value
+        )
+        
+        # Check if quoting is needed BEFORE escaping
+        $needsQuoting = $Value -match '[,"\n\r\t]' -or $Value -match '^\s' -or $Value -match '\s$'
+        
+        # Apply escaping
+        $escapedValue = $Value -replace '\\', '\\\\' -replace '"', '\\"' -replace "`n", '\\n' -replace "`r", '\\r' -replace "`t", '\\t'
+        
+        # Return quoted or unquoted value
+        if ($needsQuoting) {
+            return "`"$escapedValue`""
+        } else {
+            return $escapedValue
+        }
+    }
+
     $toon = ""
     
     # Add title if present
     if ($VideoInfo.PSObject.Properties['title']) {
-        # Check if quoting is needed BEFORE escaping
-        $needsQuoting = $VideoInfo.title -match '[,"\n\r\t]' -or $VideoInfo.title -match '^\s' -or $VideoInfo.title -match '\s$'
-        $titleValue = $VideoInfo.title -replace '\\', '\\\\' -replace '"', '\\"' -replace "`n", '\\n' -replace "`r", '\\r' -replace "`t", '\\t'
-        if ($needsQuoting) {
-            $toon += "title: `"$titleValue`"`n"
-        } else {
-            $toon += "title: $titleValue`n"
-        }
+        $titleValue = ConvertTo-TOONValue -Value $VideoInfo.title
+        $toon += "title: $titleValue`n"
     }
     
     # Add description if present
     if ($VideoInfo.PSObject.Properties['description']) {
-        # Check if quoting is needed BEFORE escaping
-        $needsQuoting = $VideoInfo.description -match '[,"\n\r\t]' -or $VideoInfo.description -match '^\s' -or $VideoInfo.description -match '\s$'
-        $descValue = $VideoInfo.description -replace '\\', '\\\\' -replace '"', '\\"' -replace "`n", '\\n' -replace "`r", '\\r' -replace "`t", '\\t'
-        if ($needsQuoting) {
-            $toon += "description: `"$descValue`"`n"
-        } else {
-            $toon += "description: $descValue`n"
-        }
+        $descValue = ConvertTo-TOONValue -Value $VideoInfo.description
+        $toon += "description: $descValue`n"
     }
     
-    # Add language
-    $toon += "language: $($VideoInfo.language)`n"
+    # Add language (with proper escaping)
+    $langValue = ConvertTo-TOONValue -Value $VideoInfo.language
+    $toon += "language: $langValue`n"
     
     # Add transcript in tabular TOON format
     $transcriptCount = $VideoInfo.transcript.Count
     $toon += "transcript[$transcriptCount]{start,duration,text}:`n"
     
     foreach ($part in $VideoInfo.transcript) {
-        # Check if quoting is needed BEFORE escaping
-        $needsQuoting = $part.text -match '[,"\n\r\t]' -or $part.text -match '^\s' -or $part.text -match '\s$'
-        $textValue = $part.text -replace '\\', '\\\\' -replace '"', '\\"' -replace "`n", '\\n' -replace "`r", '\\r' -replace "`t", '\\t'
-        if ($needsQuoting) {
-            $toon += "  $($part.start),$($part.duration),`"$textValue`"`n"
-        } else {
-            $toon += "  $($part.start),$($part.duration),$textValue`n"
-        }
+        $textValue = ConvertTo-TOONValue -Value $part.text
+        $toon += "  $($part.start),$($part.duration),$textValue`n"
     }
     
     return $toon

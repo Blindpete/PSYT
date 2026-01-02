@@ -25,7 +25,9 @@ The PSYT module provides functions to validate YouTube video IDs, retrieve the H
 5. Get-Transcript
     - Retrieves the transcript of a YouTube video using the video ID.
     - Returns an object containing the video title, description, language, and transcript parts.
-    - Optional parameters: IncludeTitle, IncludeDescription.
+    - Optional parameters: IncludeTitle, IncludeDescription, OutputFormat.
+    - Supports three output formats: PSObject, Markdown (default), and TOON.
+    - TOON (Token-Oriented Object Notation) is a compact format optimized for LLM consumption.
 
 
 .PARAMETER videoId
@@ -37,13 +39,24 @@ Specifies whether to include the video title in the transcript object. Default i
 .PARAMETER IncludeDescription
 Specifies whether to include the video description in the transcript object. Default is false.
 
+.PARAMETER OutputFormat
+Specifies the output format: PSObject, Markdown (default), or TOON. TOON format is optimized for LLM prompts with minimal token usage.
+
 .EXAMPLE
 PS C:\> Test-YouTubeVideoId -InputString "https://www.youtube.com/watch?v=vc79sJ9VOqk"
 Returns: "vc79sJ9VOqk"
 
 .EXAMPLE
 PS C:\> Get-Transcript -videoId "GikIJpUv6oo" -IncludeTitle -IncludeDescription
-Returns: Object containing the video title, description, language, and transcript parts.
+Returns: Markdown formatted transcript with title, description, and transcript table.
+
+.EXAMPLE
+PS C:\> Get-Transcript -videoId "GikIJpUv6oo" -OutputFormat PSObject
+Returns: PowerShell object containing the video language and transcript parts.
+
+.EXAMPLE
+PS C:\> Get-Transcript -videoId "GikIJpUv6oo" -IncludeTitle -OutputFormat TOON
+Returns: TOON formatted transcript optimized for LLM consumption.
 
 .NOTES
 This module requires the Invoke-WebRequest cmdlet to be available.

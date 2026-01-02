@@ -50,6 +50,37 @@ $summary = ai @summaryParams
 $summary | glow
 ```
 
+### Output Formats
+
+PSYT supports multiple output formats for the `Get-Transcript` function:
+
+- **Markdown** (default): Returns a formatted markdown document with tables
+- **PSObject**: Returns a PowerShell object for programmatic use
+- **TOON**: Returns [Token-Oriented Object Notation](https://github.com/toon-format/toon) format, optimized for LLM consumption
+
+#### TOON Format Example
+
+TOON is a compact, human-readable format designed for LLM prompts. It uses CSV-style tabular arrays to minimize token usage while maintaining structure:
+
+```powershell
+$transcriptParams = @{
+    videoId            = 'OHQFObW6PXA'
+    IncludeTitle       = $true
+    IncludeDescription = $true
+    OutputFormat       = 'TOON'
+}
+
+$toonTranscript = Get-Transcript @transcriptParams
+# Returns:
+# title: Video Title Here
+# description: Video description here
+# language: English
+# transcript[150]{start,duration,text}:
+#   0.0,2.5,Welcome to this video
+#   2.5,3.0,Today we'll discuss...
+#   ...
+```
+
 ### Output
 
 ### Summary of "AI Development for a Non-Developer"

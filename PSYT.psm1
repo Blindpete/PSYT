@@ -25,7 +25,9 @@ The PSYT module provides functions to validate YouTube video IDs, retrieve the H
 5. Get-Transcript
     - Retrieves the transcript of a YouTube video using the video ID.
     - Returns an object containing the video title, description, language, and transcript parts.
-    - Optional parameters: IncludeTitle, IncludeDescription.
+    - Optional parameters: IncludeTitle, IncludeDescription, OutputFormat.
+    - Supports three output formats: PSObject, Markdown (default), and TOON.
+    - TOON (Token-Oriented Object Notation) is a compact format optimized for LLM consumption.
 
 
 .PARAMETER videoId
@@ -37,13 +39,24 @@ Specifies whether to include the video title in the transcript object. Default i
 .PARAMETER IncludeDescription
 Specifies whether to include the video description in the transcript object. Default is false.
 
+.PARAMETER OutputFormat
+Specifies the output format: PSObject, Markdown (default), or TOON. TOON format is optimized for LLM prompts with minimal token usage.
+
 .EXAMPLE
 PS C:\> Test-YouTubeVideoId -InputString "https://www.youtube.com/watch?v=vc79sJ9VOqk"
 Returns: "vc79sJ9VOqk"
 
 .EXAMPLE
 PS C:\> Get-Transcript -videoId "GikIJpUv6oo" -IncludeTitle -IncludeDescription
-Returns: Object containing the video title, description, language, and transcript parts.
+Returns: Markdown formatted transcript with title, description, and transcript table.
+
+.EXAMPLE
+PS C:\> Get-Transcript -videoId "GikIJpUv6oo" -OutputFormat PSObject
+Returns: PowerShell object containing the video language and transcript parts.
+
+.EXAMPLE
+PS C:\> Get-Transcript -videoId "GikIJpUv6oo" -IncludeTitle -OutputFormat TOON
+Returns: TOON formatted transcript optimized for LLM consumption.
 
 .NOTES
 This module requires the Invoke-WebRequest cmdlet to be available.
@@ -358,6 +371,62 @@ function Get-RawTranscript {
     return $transcriptParts
 }
 
+# Helper function to convert transcript data to TOON format
+function ConvertTo-TOON {
+    param (
+        [PSCustomObject]$VideoInfo
+    )
+
+    # Helper function to escape and quote a value for TOON format
+    function ConvertTo-TOONValue {
+        param (
+            [string]$Value
+        )
+        
+        # Check if quoting is needed BEFORE escaping
+        $needsQuoting = $Value -match '[,"\n\r\t]' -or $Value -match '^\s' -or $Value -match '\s$'
+        
+        # Apply escaping
+        $escapedValue = $Value -replace '\\', '\\\\' -replace '"', '\\"' -replace "`n", '\\n' -replace "`r", '\\r' -replace "`t", '\\t'
+        
+        # Return quoted or unquoted value
+        if ($needsQuoting) {
+            return "`"$escapedValue`""
+        } else {
+            return $escapedValue
+        }
+    }
+
+    $toon = ""
+    
+    # Add title if present
+    if ($VideoInfo.PSObject.Properties['title']) {
+        $titleValue = ConvertTo-TOONValue -Value $VideoInfo.title
+        $toon += "title: $titleValue`n"
+    }
+    
+    # Add description if present
+    if ($VideoInfo.PSObject.Properties['description']) {
+        $descValue = ConvertTo-TOONValue -Value $VideoInfo.description
+        $toon += "description: $descValue`n"
+    }
+    
+    # Add language (with proper escaping)
+    $langValue = ConvertTo-TOONValue -Value $VideoInfo.language
+    $toon += "language: $langValue`n"
+    
+    # Add transcript in tabular TOON format
+    $transcriptCount = $VideoInfo.transcript.Count
+    $toon += "transcript[$transcriptCount]{start,duration,text}:`n"
+    
+    foreach ($part in $VideoInfo.transcript) {
+        $textValue = ConvertTo-TOONValue -Value $part.text
+        $toon += "  $($part.start),$($part.duration),$textValue`n"
+    }
+    
+    return $toon
+}
+
 # Function to get the transcript
 function Get-Transcript {
     param (
@@ -365,7 +434,7 @@ function Get-Transcript {
         [string]$videoId,
         [switch]$IncludeTitle,
         [switch]$IncludeDescription,
-        [ValidateSet('PSObject', 'Markdown')]
+        [ValidateSet('PSObject', 'Markdown', 'TOON')]
         [string]$OutputFormat = 'Markdown'
     )
     $vidId = Test-YouTubeVideoId -InputString $videoId
@@ -404,6 +473,8 @@ function Get-Transcript {
         }
         if ($OutputFormat -eq 'Markdown') {
             return $markdown
+        } elseif ($OutputFormat -eq 'TOON') {
+            return ConvertTo-TOON -VideoInfo $videoinfo
         } else {
             return $videoinfo
         }

@@ -254,42 +254,25 @@ function Get-LangOptionsWithLink {
         $videoDetailsJson = $innertubeData.videoDetails
         # Extract the caption tracks: baseUrl=/api/timedtext?... this url does expire after some time
         $captionTracks = $captions.captionTracks
-        # This will give the language options
-        # if $_.name.runs.text else $_.name.simpleText
 
-        $languageOptions = $captionTracks | ForEach-Object { 
-            if ($_.name.runs.text) {
-                $_.name.runs.text 
-            } else {
-                $_.name.simpleText 
-            } }
-
-        # Looks like most will be 'English (auto-generated)' and 'English' azurming this is manuly created, so the one we want over auto-generated
-        $languageOptions = $languageOptions | Sort-Object {
-            if ($_ -eq 'English') {
-                return -1 
-            } elseif ($_ -match 'English') {
-                return 0 
-            } else {
-                return 1 
-            }
-        }
-
-        $languageOptionsWithLink = $languageOptions | ForEach-Object {
-            $langName = $_
-            # $link = ($captionTracks | Where-Object { $_.name.runs[0].text -or $_.name.simpleText -eq $langName }).baseUrl
-            $link = $captionTracks | ForEach-Object {
-                $name = if ($_.name.runs) { $_.name.runs[0].text } else { $_.name.simpleText }
-                if ($name -eq $langName) {
-                    # Mirror youtube-transcript-api behavior: remove fmt=srv3, which can trigger PO-token requirements / odd responses.
-                    ($_.baseUrl -replace '&fmt=srv3', '')
-                }
-            } | Select-Object -First 1
+        # Build language options with links directly from caption tracks
+        # Mirror youtube-transcript-api behavior: remove fmt=srv3, which can trigger PO-token requirements
+        $languageOptionsWithLink = $captionTracks | ForEach-Object {
+            $langName = if ($_.name.runs.text) { $_.name.runs.text } else { $_.name.simpleText }
             [PSCustomObject]@{
                 title       = $videoDetailsJson.title
                 description = $videoDetailsJson.shortDescription
                 language    = $langName
-                link        = $link
+                link        = $_.baseUrl -replace '&fmt=srv3', ''
+            }
+        }
+
+        # Sort to prioritize 'English' (manually created) over 'English (auto-generated)' over other languages
+        $languageOptionsWithLink = $languageOptionsWithLink | Sort-Object {
+            switch -Regex ($_.language) {
+                '^English$' { -1 }
+                'English'   { 0 }
+                default     { 1 }
             }
         }
 
@@ -346,9 +329,9 @@ function Get-RawTranscript {
 
     $textNodes = $xmlDoc.documentElement.ChildNodes
 
-    $transcriptParts = @()
-    foreach ($node in $textNodes) {
-        $transcriptParts += [PSCustomObject]@{
+    # Use pipeline output instead of += for better performance
+    $transcriptParts = foreach ($node in $textNodes) {
+        [PSCustomObject]@{
             start    = $node.GetAttribute('start')
             duration = $node.GetAttribute('dur')
             text     = [System.Web.HttpUtility]::HtmlDecode($node.InnerText)
@@ -376,40 +359,38 @@ function Get-Transcript {
     }
     
     $link = $langOptLinks[0].link
-    if ($null -ne $link) {
-
-        # retrun the video info
-        # title, description, transcript
-        $markdown = "# Video Transcript`n"
-        $videoinfo = [PSCustomObject][ordered]@{
-        }
-        if ($IncludeTitle) {
-            $videoinfo | Add-Member -NotePropertyName 'title' -NotePropertyValue $langOptLinks[0].title
-            $markdown += "## Title`n$($langOptLinks[0].title)`n"
-        }
-        if ($IncludeDescription) {
-            $videoinfo | Add-Member -NotePropertyName 'description' -NotePropertyValue $langOptLinks[0].description
-            $markdown += "## Description`n$($langOptLinks[0].description)`n"
-        }
-        $videoinfo | Add-Member -NotePropertyName 'language' -NotePropertyValue $langOptLinks[0].language
-        $markdown += "## Language`n$($langOptLinks[0].language)`n"
-        $videoinfo | Add-Member -NotePropertyName 'transcript' -NotePropertyValue (Get-RawTranscript -link $link)
-        $markdown += @"
-## Transcript
-| Start    | Duration | Text |
-| :------- | :------ | :------ |`n
-"@
-        foreach ($part in $videoinfo.transcript) {
-            $markdown += "| $($part.start) | $($part.duration) | $($part.text) |`n"
-        }
-        if ($OutputFormat -eq 'Markdown') {
-            return $markdown
-        } else {
-            return $videoinfo
-        }
-        
-    } else {
+    if ($null -eq $link) {
         Write-Host 'No valid link found for the transcript.'
         return @()
     }
+
+    # Build video info object
+    $langOption = $langOptLinks[0]
+    $transcript = Get-RawTranscript -link $link
+
+    $videoinfoProps = [ordered]@{}
+    if ($IncludeTitle) { $videoinfoProps['title'] = $langOption.title }
+    if ($IncludeDescription) { $videoinfoProps['description'] = $langOption.description }
+    $videoinfoProps['language'] = $langOption.language
+    $videoinfoProps['transcript'] = $transcript
+
+    if ($OutputFormat -eq 'PSObject') {
+        return [PSCustomObject]$videoinfoProps
+    }
+
+    # Build markdown using array and -join for efficiency
+    $mdParts = @(
+        '# Video Transcript'
+        if ($IncludeTitle) { "## Title", $langOption.title }
+        if ($IncludeDescription) { "## Description", $langOption.description }
+        "## Language", $langOption.language
+        '## Transcript'
+        '| Start    | Duration | Text |'
+        '| :------- | :------ | :------ |'
+    )
+    $mdParts += foreach ($part in $transcript) {
+        "| $($part.start) | $($part.duration) | $($part.text) |"
+    }
+
+    return $mdParts -join "`n"
 }

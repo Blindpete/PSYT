@@ -1,3 +1,40 @@
+function Invoke-GeminiAPI {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Instructions,
+
+        [Parameter(Mandatory)]
+        [string]$UserInput
+    )
+
+    $API_KEY = $env:GeminiKey
+    if (-not $API_KEY) {
+        Write-Error "API key is missing. Please set the 'GeminiKey' environment variable."
+        return
+    }
+
+    $Body = @{
+        contents = @(
+            @{
+                role  = 'model'
+                parts = @(@{ text = $Instructions })
+            },
+            @{
+                role  = 'user'
+                parts = @(@{ text = $UserInput })
+            }
+        )
+    } | ConvertTo-Json -Depth 6
+
+    $Url = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=$API_KEY"
+
+    try {
+        Invoke-RestMethod -Uri $Url -Method Post -ContentType 'application/json' -Body $Body
+    } catch {
+        Write-Error "Failed to invoke Gemini API: $_"
+    }
+}
+
 function Invoke-GeminiAI {
     param(
         [Parameter(Mandatory)]
@@ -7,65 +44,16 @@ function Invoke-GeminiAI {
         [string]$Instructions
     )
 
-    function Invoke-GeminiAPI {
-        param(
-            [string]$Instructions,
-            [string]$UserInput
-        )
-
-        $API_KEY = $env:GeminiKey
-        if (-not $API_KEY) {
-            Write-Error "API key is missing. Please set the 'GeminiKey' environment variable."
-            return
-        }
-
-        $Headers = @{
-            'Content-Type' = 'application/json'
-        }
-
-        $Body = @{
-            contents = @(
-                @{
-                    role  = 'model'
-                    parts = @(
-                        @{
-                            'text' = $Instructions
-                        }
-                    )
-                },
-                @{
-                    role  = 'user'
-                    parts = @(
-                        @{
-                            'text' = $UserInput
-                        }
-                    )
-                }
-            )
-        } | ConvertTo-Json -Depth 6
-
-        $Url = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=$API_KEY"
-
-        try {
-            $response = Invoke-RestMethod -Uri $Url -Method Post -Headers $Headers -Body $Body
-            return $response
-        } catch {
-            Write-Error "Failed to invoke Gemini API: $_"
-        }
-    }
-
-    # Check if 'glow' is available
-    $useGlow = Get-Command -Name glow -ErrorAction SilentlyContinue
-
     $response = Invoke-GeminiAPI -Instructions $Instructions -UserInput $UserInput
+    if (-not $response) { return }
 
-    if ($response) {
-        $contentText = $response.candidates[0].content.parts[0].text
-        if ($useGlow) {
-            $contentText | glow
-        } else {
-            $contentText
-        }
+    $contentText = $response.candidates[0].content.parts[0].text
+
+    # Check if 'glow' is available for markdown rendering
+    if (Get-Command -Name glow -ErrorAction SilentlyContinue) {
+        $contentText | glow
+    } else {
+        $contentText
     }
 }
 
